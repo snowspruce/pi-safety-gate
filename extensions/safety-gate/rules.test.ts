@@ -359,6 +359,10 @@ criticalHasEvidence("多目标有证据", "rm -rf dist build");
 
 // --- 分级：dangerous（语义明确的破坏，一次确认） ----------------------------
 severityIs("强制推送", "git push --force", "dangerous");
+allowed("强制推送 + --dry-run（不写远端，不拦）", "git push --force --dry-run origin main");
+allowed("强制推送 + -n", "git push -f -n origin main");
+allowed("普通推送", "git push origin main");
+allowed("--force-with-lease", "git push --force-with-lease origin main");
 severityIs("reset --hard", "git reset --hard HEAD~1", "dangerous");
 severityIs("git clean -f", "git clean -fd", "dangerous");
 severityIs("提权", "sudo rm -rf build", "dangerous");

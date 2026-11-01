@@ -65,6 +65,7 @@ mkdir -p '~/.pi/eink/trash/<timestamp>' && mv -- dist '~/.pi/eink/trash/<timesta
 | `cat > x.py <<'EOF' … EOF; python3 x.py` 全被拦（21 条） | heredoc 写的脚本内容**就在命令文本里**：递归分析正文，只有正文真有问题才拦 |
 | `/tmp` 下的删除被判 critical（16 条） | `/tmp`、`$TMPDIR`、`/private/tmp` 视为一次性内容，不再升级 |
 | `sed -i 's|a|b|' <受保护路径>` 被当成写一个叫 `s\|a\|b\|` 的路径 | 原地编辑类命令跳过第一个位置参数（它是脚本，不是路径） |
+| `git push --force --dry-run` 与真强制推送一样对待 | `--dry-run` / `-n` 明确不写远端，不再拦 |
 
 结果（同一语料）：静默放行 90.6%，改写为移走 31 条，仍然询问 **7.0%**；
 剔掉我自己写的门禁测试命令后，**真实工作命令 1664 条里只有 81 条（4.9%）会询问**。

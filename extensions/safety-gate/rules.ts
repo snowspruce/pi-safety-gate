@@ -562,7 +562,9 @@ function analyzeGit(args: string[]): Finding | null {
 		}
 	}
 
-	if (subcommand === "push" && (hasShortFlag(args, "f") || hasExactFlag(args, "--force"))) {
+	// --dry-run / -n 明确不写远端：强制推送的规则不该把它也拦下来。
+	const dryRun = hasExactFlag(args, "--dry-run") || args.includes("-n");
+	if (subcommand === "push" && !dryRun && (hasShortFlag(args, "f") || hasExactFlag(args, "--force"))) {
 		return { kind: "dangerous-command", severity: "dangerous", reason: "Force push overwrites remote history (use --force-with-lease)" };
 	}
 	if (subcommand === "reset" && hasExactFlag(args, "--hard")) {

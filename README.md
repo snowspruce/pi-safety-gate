@@ -124,7 +124,19 @@ npm test          # = node --experimental-strip-types extensions/safety-gate/rul
 规则引擎（`rules.ts`）刻意不 import `pi`，所以能在 agent 之外直接跑。
 `index.ts` 依赖运行时注入的 `ExtensionContext`，只能靠真实 pi 会话或 harness 验证。
 
-## 安装（本机现状）
+## 安装
+
+```sh
+git clone https://github.com/snowspruce/pi-safety-gate
+ln -sfn "$PWD/pi-safety-gate/extensions/safety-gate" ~/.pi/agent/extensions/safety-gate
+```
+
+（或者作为 pi package：`pi install ~/pi-safety-gate` —— 两者**不要并存**，否则同一命令会问两次。）
+
+`pi-eink` 的 Kindle 远程确认依赖本扩展的 `pending.json` 握手；不装它也能用 pi-eink，
+只是危险命令只能在本机终端确认，Kindle 上没有允许/拒绝按钮。
+
+## 本机现状（开发期的加载方式）
 
 ```sh
 ln -sfn ~/Documents/Program/pi-safety-gate/extensions/safety-gate \

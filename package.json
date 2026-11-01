@@ -2,12 +2,15 @@
 	"name": "pi-safety-gate",
 	"version": "0.1.0",
 	"private": true,
+	"type": "module",
 	"description": "pi extension: confirm dangerous bash commands and protect credentials",
 	"scripts": {
 		"test": "node --experimental-strip-types extensions/safety-gate/rules.test.ts"
 	},
 	"pi": {
-		"extensions": ["./extensions/safety-gate/index.ts"]
+		"extensions": [
+			"./extensions/safety-gate/index.ts"
+		]
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*"

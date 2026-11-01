@@ -1,0 +1,9 @@
+# 运行时状态与本地策略，绝不入库（都在 ~/.pi/eink 下，这里兜底）
+gate.log
+gate.log.1
+gate-policy.json
+pending.json
+answer.json
+trash/
+node_modules/
+.DS_Store

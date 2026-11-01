@@ -123,6 +123,21 @@ npm test          # = node --experimental-strip-types extensions/safety-gate/rul
 规则引擎（`rules.ts`）刻意不 import `pi`，所以能在 agent 之外直接跑。
 `index.ts` 依赖运行时注入的 `ExtensionContext`，只能靠真实 pi 会话或 harness 验证。
 
+## 安装（本机现状）
+
+```sh
+ln -sfn ~/Documents/Program/pi-safety-gate/extensions/safety-gate \
+        ~/.pi/agent/extensions/safety-gate
+```
+
+用**符号链接**而不是 pi package，因为这个扩展在频繁迭代：
+
+- 松散/软链扩展会在 `/reload` 时重新读取，改完 `rules.ts` 直接 reload 就生效；
+- 新增的 **package** 不会被已在运行的会话的 `/reload` 纳入（实测：同一个 session 连续两次 reload 后仍无门禁，而新进程正常）。
+- 代价：`pi list` 里看不到它（那命令只列 packages）。
+
+等它稳定了再换成 package（`pi install ~/Documents/Program/pi-safety-gate` 并删掉软链，**不要两者并存**，否则同一命令会问两次）。
+
 ## 配置
 
 | 变量 | 默认 | 含义 |

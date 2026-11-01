@@ -352,6 +352,16 @@ function hasExactFlag(args: string[], ...flags: string[]): boolean {
 	return args.some((a) => flags.includes(a));
 }
 
+/**
+ * 只有像路径的 token 才值得检查受保护路径。
+ * heredoc/引号/正则里漏出来的 `=`, `0`, `s/x/y/` 这类片段报到用户面前全是噪音。
+ */
+function looksLikePath(token: string): boolean {
+	if (token === "" || token === "-") return false;
+	if (/^[=+0-9.,:;!?*%$#@^&|<>()[\]{}~]+$/.test(token)) return false;
+	return /[\w.-]/.test(token);
+}
+
 /** 该命令会写入哪些路径（用于受保护路径检查）。 */
 export function collectWriteTargets(command: string, args: string[], tokens: string[]): string[] {
 	const targets: string[] = redirectTargets(tokens);
@@ -379,7 +389,9 @@ export function collectWriteTargets(command: string, args: string[], tokens: str
 			// `sed -i 's|a|b|' f`：第一个位置参数是脚本，不是路径。
 			// 把脚本当写入目标会误报「写受保护路径」——真实踩过：改门禁自己的测试文件被自己拦下。
 			if (hasExactFlag(args, "-i") || args.some((a) => a.startsWith("-i"))) {
-				targets.push(...positional.slice(1));
+				// macOS 的 `sed -i '' 's/x/y/' f` 会把空串当独立参数传进来，先剔掉再取路径
+				const nonEmpty = positional.filter((arg) => arg !== "");
+				targets.push(...nonEmpty.slice(1));
 			}
 			break;
 		case "dd":
@@ -574,7 +586,8 @@ function analyzeGit(args: string[]): Finding | null {
 		return { kind: "dangerous-command", severity: "dangerous", reason: "git clean -f deletes untracked files" };
 	}
 	if (subcommand === "branch" && hasExactFlag(args, "-D")) {
-		return { kind: "dangerous-command", severity: "dangerous", reason: "git branch -D deletes a branch without merging" };
+		// 删掉的只是 ref，提交还在 reflog 里，能捞回来 → 只提示
+		return { kind: "unparsed", severity: "notice", reason: "git branch -D removes a branch ref (recoverable from reflog)" };
 	}
 	if (subcommand === "checkout" && hasExactFlag(args, "--")) {
 		const pathspec = args[args.indexOf("--") + 1];
@@ -678,27 +691,39 @@ const DESTRUCTIVE_INLINE_CODE =
  * 直接报"无法核验"属于误伤。这里收集同一条命令内的字面量赋值并解析。
  * 值里带 `$` 或反引号的不算字面量——那种确实核验不了。
  */
-function collectTempVars(parts: string[], tempVars: Set<string>): void {
-	for (const part of parts) {
-		for (const token of tokenize(part)) {
-			if (!ASSIGNMENT.test(token)) continue;
-			const eq = token.indexOf("=");
-			if (/mktemp/.test(token.slice(eq + 1))) tempVars.add(token.slice(0, eq));
+/**
+ * 从原始命令文本里扫赋值（不能靠 splitCommands 的片段：它按 `(`/`)` 切开，
+ * `TMPH=$(mktemp -d)` 会被拆成 `TMPH=$` + `mktemp -d`，值就丢了）。
+ *   - 值里还有 `$` 或反引号 → 不是字面量，跳过
+ *   - 值来自 mktemp → 记成临时变量，往它下面写文件按临时目录处理
+ */
+function scanAssignments(command: string): { literals: Map<string, string>; tempVars: Set<string> } {
+	const literals = new Map<string, string>();
+	const tempVars = new Set<string>();
+	const pattern = /(?:^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=("[^"]*"|'[^']*'|[^\s;&|)]+)/g;
+	for (const match of command.matchAll(pattern)) {
+		const name = match[1];
+		const raw = match[2] ?? "";
+		if (/\$\(\s*mktemp\b|`\s*mktemp\b/.test(raw)) {
+			tempVars.add(name);
+			continue;
 		}
+		let value = raw.replace(/^["']|["']$/g, "");
+		// `$HOME` 是已知常量，先展开；展开后还带 `$`/反引号才放弃
+		value = value.replace(/^\$\{?HOME\}?/, homedir());
+		if (value === "" || /[$`]/.test(value)) continue;
+		literals.set(name, value);
 	}
+	return { literals, tempVars };
 }
 
-function collectLiterals(parts: string[], vars: Map<string, string>): void {
-	for (const part of parts) {
-		for (const token of tokenize(part)) {
-			if (!ASSIGNMENT.test(token)) continue;
-			const eq = token.indexOf("=");
-			const name = token.slice(0, eq);
-			const value = token.slice(eq + 1);
-			if (value === "" || /[$`]/.test(value)) continue;
-			vars.set(name, value);
-		}
-	}
+/** `$D/profiles/x` → 用 `D=` 的字面量值展开前缀；解析不了返回 null。 */
+function expandLeadingVar(token: string, vars: Map<string, string>): string | null {
+	const match = /^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))(.*)$/.exec(token);
+	if (!match) return null;
+	const value = vars.get(match[1] ?? match[2]);
+	if (value === undefined) return null;
+	return value + (match[3] ?? "");
 }
 
 function resolveVar(token: string, vars: Map<string, string>): string | null {
@@ -792,10 +817,13 @@ function analyzeSegment(
 
 	// 写入目标 → 受保护路径 / 设备
 	for (const rawTarget of collectWriteTargets(command, args, tokens)) {
+		if (!rawTarget.startsWith("$") && !looksLikePath(rawTarget)) continue;
 		// `$TMP=$(mktemp -d)` 之后往 $TMP 里写：路径必然在临时目录内
 		const tempName = /^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/.exec(rawTarget)?.[1];
 		if (tempName !== undefined && tempVars.has(tempName)) continue;
-		const target = rawTarget.startsWith("$") ? (resolveVar(rawTarget, vars) ?? rawTarget) : rawTarget;
+		const target = rawTarget.startsWith("$")
+			? (resolveVar(rawTarget, vars) ?? expandLeadingVar(rawTarget, vars) ?? rawTarget)
+			: rawTarget;
 		if (target.startsWith("$")) {
 			return {
 				kind: "dangerous-command",
@@ -1064,13 +1092,41 @@ function analyzeForkBomb(command: string): Finding | null {
  * （`rm -rf /'` 的 `rm` 部分、`git reset --hard "` 都仍然命中）。
  * 只有「解析不了且没命中任何规则」才返回 `unparsed`，调用方据此降级为提示。
  */
+/**
+ * 把 heredoc 正文挖掉，只留命令行本身。
+ * 正文是数据（python 源码、JSON、脚本内容），按 shell 逐行解析会造出成片误报：
+ * `cat > x.py <<'PY' … PY` 里随便一行 `TMPH=$(mktemp -d)` 都会被当成命令。
+ * 正文仍然会在「写入后立即执行」的路径里被单独分析。
+ */
+function stripHeredocs(command: string): string {
+	const lines = command.split("\n");
+	const out: string[] = [];
+	for (let i = 0; i < lines.length; i++) {
+		out.push(lines[i]);
+		const match = /<<(-?)\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/.exec(lines[i]);
+		if (!match) continue;
+		const allowTabs = match[1] === "-";
+		const tag = match[2];
+		const isEnd = (line: string) => (allowTabs ? line.replace(/^\t+/, "") === tag : line === tag);
+		let j = i + 1;
+		// 嵌套 heredoc（正文里出现同名的 <<'PY'）不能提前收尾，否则后半段会被当成命令
+		while (j < lines.length && !isEnd(lines[j])) j++;
+		if (j >= lines.length) continue; // 没闭合：按普通文本处理，别吞掉后面的命令
+		out.push(""); // 正文占位，保持行结构
+		i = j;        // 跳过正文与结束标记
+	}
+	return out.join("\n");
+}
+
 export function analyzeCommand(command: string, cwd: string, depth = 0): Finding | null {
 	if (typeof command !== "string" || command.trim() === "") return null;
 
 	const forkBomb = analyzeForkBomb(command);
 	if (forkBomb) return forkBomb;
 
-	const { parts, separators, balanced } = splitCommands(command);
+	const stripped = stripHeredocs(command);
+
+	const { parts, separators, balanced } = splitCommands(stripped);
 
 	const piped = analyzePipeToShell(parts, separators);
 	if (piped) return piped;
@@ -1078,10 +1134,7 @@ export function analyzeCommand(command: string, cwd: string, depth = 0): Finding
 	const writeThenRun = analyzeWriteThenRun(parts, command, cwd, depth);
 	if (writeThenRun) return writeThenRun;
 
-	const vars = new Map<string, string>();
-	const tempVars = new Set<string>();
-	collectLiterals(parts, vars);
-	collectTempVars(parts, tempVars);
+	const { literals: vars, tempVars } = scanAssignments(stripped);
 
 	let effectiveCwd = cwd;
 	for (const part of parts) {

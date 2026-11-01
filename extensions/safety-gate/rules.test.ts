@@ -311,6 +311,22 @@ blocked("清整个 eink 目录仍然拦（里面有 token）", "rm -rf ~/.pi/ein
 	expect(log === null, "删日志不该产生 finding", JSON.stringify(log));
 }
 
+// --- 解析噪音：heredoc 正文、变量前缀、垃圾 token --------------------------
+allowed(
+	"heredoc 正文里的 $VAR 不当命令（含缩进结束标记）",
+	"python3 - <<'PY'\nimport os\n\t\"$PY\" -x <<'PY'\nPY\nPY\nprint(1)",
+);
+{
+	// `D="$HOME/..."` 是字面量，`$D/profiles/x` 应能解析后判断（不是"无法核验"）
+	const f = analyzeCommand('D="$HOME/Library/Application Support/x"; cp "$D/a.yaml" "$D/b.yaml"', CWD);
+	expect(f === null, "变量前缀拼接的普通路径不该触发", JSON.stringify(f));
+	// 解析后确实落在受保护路径上，仍然要拦
+	const g = analyzeCommand('D="$HOME/.pi/eink"; echo x > "$D/token"', CWD);
+	expect(g?.hardBlock === true, "变量前缀指向凭据仍应硬阻断", JSON.stringify(g));
+}
+allowed("sed -i 的空备份参数不乱取目标", "sed -i '' 's/x/y/' notes.txt");
+severityIs("git branch -D 只提示不拦（reflog 可恢复）", "git branch -D tmp-branch", "notice");
+
 // --- 门禁自身与凭据必须受保护 ----------------------------------------------
 pathBlocked("~/.pi/agent/settings.json");
 pathBlocked("~/.pi/agent/extensions/safety-gate/rules.ts");

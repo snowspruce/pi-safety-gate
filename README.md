@@ -64,6 +64,7 @@ mkdir -p '~/.pi/eink/trash/<timestamp>' && mv -- dist '~/.pi/eink/trash/<timesta
 | `> $TMP/…`（`TMP=$(mktemp -d)`）报"写入是变量"（29 条） | `mktemp` 变量的写入直接放过（路径必然在临时目录） |
 | `cat > x.py <<'EOF' … EOF; python3 x.py` 全被拦（21 条） | heredoc 写的脚本内容**就在命令文本里**：递归分析正文，只有正文真有问题才拦 |
 | `/tmp` 下的删除被判 critical（16 条） | `/tmp`、`$TMPDIR`、`/private/tmp` 视为一次性内容，不再升级 |
+| `sed -i 's|a|b|' <受保护路径>` 被当成写一个叫 `s\|a\|b\|` 的路径 | 原地编辑类命令跳过第一个位置参数（它是脚本，不是路径） |
 
 结果（同一语料）：静默放行 90.6%，改写为移走 31 条，仍然询问 **7.0%**；
 剔掉我自己写的门禁测试命令后，**真实工作命令 1664 条里只有 81 条（4.9%）会询问**。
@@ -116,8 +117,7 @@ mkdir -p '~/.pi/eink/trash/<timestamp>' && mv -- dist '~/.pi/eink/trash/<timesta
 ## 测试
 
 ```sh
-cd ~/.pi/agent/extensions/safety-gate
-node --experimental-strip-types rules.test.ts     # 规则与改写的纯逻辑单测
+npm test          # = node --experimental-strip-types extensions/safety-gate/rules.test.ts
 ```
 
 规则引擎（`rules.ts`）刻意不 import `pi`，所以能在 agent 之外直接跑。

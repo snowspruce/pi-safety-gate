@@ -376,7 +376,11 @@ export function collectWriteTargets(command: string, args: string[], tokens: str
 			break;
 		case "sed":
 		case "perl":
-			if (hasExactFlag(args, "-i") || args.some((a) => a.startsWith("-i"))) targets.push(...positional);
+			// `sed -i 's|a|b|' f`：第一个位置参数是脚本，不是路径。
+			// 把脚本当写入目标会误报「写受保护路径」——真实踩过：改门禁自己的测试文件被自己拦下。
+			if (hasExactFlag(args, "-i") || args.some((a) => a.startsWith("-i"))) {
+				targets.push(...positional.slice(1));
+			}
 			break;
 		case "dd":
 			for (const arg of args) {

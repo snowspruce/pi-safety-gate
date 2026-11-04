@@ -86,6 +86,10 @@ bash 写入受保护路径走确认流，`write`/`edit` 工具直接阻断。
 刻意不收 `dist`、`build`、`.next` 这类名字，项目里可能有同名源码目录。它们走移入废纸篓，
 同样零确认但可恢复。`node_modules` 本身仍受保护，它与 `.git`、`.ssh` 同级敏感。
 
+清理废纸篓本身不拦：`rm -rf ~/.pi/eink/trash`、`~/.pi/eink/trash/*`、某个批次目录都是零确认，
+那是它的设计用途。但 `~/.pi/eink/trash/../token` 这类绕法会被 `normalize` 拆穿，仍按受保护路径
+处理；混合目标（废纸篓 + 真实路径）仍按真实路径升级。
+
 `npm cache clean`、`pnpm store prune`、`yarn cache clean`、`brew cleanup` 不触发任何规则。
 
 `rm -rf ~/.pi/eink/*` 依然要确认，因为里面有 `token`；`~/.pi/eink/trash/../token` 这类绕法会被

@@ -133,6 +133,4 @@ pi-eink 的 Kindle 远程确认依赖本扩展的 `pending.json` 握手。不装
 
 ---
 
-## 测试与规则调优
-
-见 [DEVELOPMENT.md](DEVELOPMENT.md)。
+测试、规则调优记录与本机加载方式见 [DEVELOPMENT.md](DEVELOPMENT.md)。
